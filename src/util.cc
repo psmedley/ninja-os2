@@ -129,7 +129,7 @@ void CanonicalizePath(string* path, uint64_t* slash_bits) {
 }
 
 static bool IsPathSeparator(char c) {
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__OS2__)
   return c == '/' || c == '\\';
 #else
   return c == '/';
@@ -153,7 +153,7 @@ void CanonicalizePath(char* path, size_t* len, uint64_t* slash_bits) {
   const char* end = start + *len;
 
   if (IsPathSeparator(*src)) {
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__OS2__)
 
     // network path starts with //
     if (*len > 1 && IsPathSeparator(*(src + 1))) {
@@ -211,7 +211,7 @@ void CanonicalizePath(char* path, size_t* len, uint64_t* slash_bits) {
   }
 
   *len = dst - start - 1;
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__OS2__)
   uint64_t bits = 0;
   uint64_t bits_mask = 1;
 
