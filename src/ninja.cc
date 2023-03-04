@@ -230,6 +230,10 @@ void Usage(const BuildConfig& config) {
 "  -j N     run N jobs in parallel (0 means infinity) [default=%d on this system]\n"
 "  -k N     keep going until N jobs fail (0 means infinity) [default=1]\n"
 "  -l N     do not start new jobs if the load average is greater than N\n"
+"  -m N     do not start new jobs if the memory usage exceeds N percent\n"
+#if !(defined(__APPLE__) || defined(linux) || defined(_WIN32))
+"           (not yet implemented on this platform)\n"
+#endif
 "  -n       dry run (don't run commands but act like they succeeded)\n"
 "\n"
 "  -d MODE  enable debugging (use '-d list' to list modes)\n"
@@ -1439,7 +1443,7 @@ int ReadFlags(int* argc, char*** argv,
 
   int opt;
   while (!options->tool &&
-         (opt = getopt_long(*argc, *argv, "d:f:j:k:l:nt:vw:C:h", kLongOptions,
+         (opt = getopt_long(*argc, *argv, "d:f:j:k:l:m:nt:vw:C:h", kLongOptions,
                             NULL)) != -1) {
     switch (opt) {
       case 'd':
@@ -1479,6 +1483,14 @@ int ReadFlags(int* argc, char*** argv,
         if (end == optarg)
           Fatal("-l parameter not numeric: did you mean -l 0.0?");
         config->max_load_average = value;
+        break;
+      }
+     case 'm': {
+        char* end;
+        const int value = strtol(optarg, &end, 10);
+        if (end == optarg || value < 0 || value > 100)
+          Fatal("-m parameter is invalid: allowed range is [0,100]");
+        config->max_memory_usage = value/100.0; // map to [0.0,100.0]
         break;
       }
       case 'n':
