@@ -433,7 +433,7 @@ TEST(SystemInformation, LoadAverage) {
 }
 
 TEST(SystemInformation, MemoryUsage) {
-#if defined(__APPLE__) || defined(linux) || defined(_WIN32)
+#if defined(__APPLE__) || defined(linux) || defined(_WIN32) || defined(__OS2__)
   EXPECT_LT(0.0f, GetMemoryUsage());
   EXPECT_GT(1.0f, GetMemoryUsage());
 #endif

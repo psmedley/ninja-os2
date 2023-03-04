@@ -39,6 +39,12 @@
 #include <sys/time.h>
 #endif
 
+#ifdef __OS2__
+#define INCL_DOS
+#define INCL_DOSMISC
+#include <os2.h>
+#endif
+
 #include <vector>
 
 // to determine the load average
@@ -889,6 +895,25 @@ double GetMemoryUsage() {
   GetPerformanceInfo(&perf, sizeof(PERFORMANCE_INFORMATION));
   return 1.0 - static_cast<double>(perf.PhysicalAvailable) /
                static_cast<double>(perf.PhysicalTotal);
+#elif (__OS2__)
+  ULONG ulPhysMem;
+  DosQuerySysInfo(QSV_TOTPHYSMEM,
+                  QSV_TOTPHYSMEM,
+                  &ulPhysMem,
+                  sizeof(ulPhysMem));
+
+  ULONG ulFreeMem;
+  DosQuerySysInfo(QSV_MAXPRMEM,
+                  QSV_MAXPRMEM,
+                  &ulFreeMem,
+                  sizeof(ulFreeMem));
+
+  if (ulFreeMem > 0 && ulPhysMem > 0) {
+      return (double) (ulPhysMem - ulFreeMem) / ulPhysMem;
+  }
+
+return -0.0f; // this is the fallback in case the API has changed
+
 #else // any unsupported platform
   return -0.0f;
 #endif
