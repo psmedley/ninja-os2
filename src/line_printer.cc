@@ -27,7 +27,9 @@
 #include <termios.h>
 #include <sys/time.h>
 #endif
-
+#ifdef __OS2__
+extern "C" void _scrsize (int *);
+#endif
 #include "util.h"
 
 using namespace std;
