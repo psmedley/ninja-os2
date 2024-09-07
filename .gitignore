@@ -47,3 +47,7 @@
 # Visual Studio files
 /.vs/
 /out/
+
+# patch files
+*.orig
+*.rej
