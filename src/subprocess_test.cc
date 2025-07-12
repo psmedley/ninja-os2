@@ -14,6 +14,7 @@
 
 #include "subprocess.h"
 
+#include "exit_status.h"
 #include "test.h"
 
 #ifndef _WIN32
@@ -50,7 +51,8 @@ TEST_F(SubprocessTest, BadCommandStderr) {
     subprocs_.DoWork();
   }
 
-  EXPECT_EQ(ExitFailure, subproc->Finish());
+  ExitStatus exit = subproc->Finish();
+  EXPECT_NE(ExitSuccess, exit);
   EXPECT_NE("", subproc->GetOutput());
 }
 
@@ -64,7 +66,8 @@ TEST_F(SubprocessTest, NoSuchCommand) {
     subprocs_.DoWork();
   }
 
-  EXPECT_EQ(ExitFailure, subproc->Finish());
+  ExitStatus exit = subproc->Finish();
+  EXPECT_NE(ExitSuccess, exit);
   EXPECT_NE("", subproc->GetOutput());
 #ifdef _WIN32
   ASSERT_EQ("CreateProcess failed: The system cannot find the file "
@@ -227,7 +230,7 @@ TEST_F(SubprocessTest, SetWithLots) {
   ASSERT_EQ(0, getrlimit(RLIMIT_NOFILE, &rlim));
   if (rlim.rlim_cur < kNumProcs) {
     printf("Raise [ulimit -n] above %u (currently %lu) to make this test go\n",
-           kNumProcs, rlim.rlim_cur);
+           kNumProcs, static_cast<unsigned long>(rlim.rlim_cur));
     return;
   }
 

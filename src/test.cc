@@ -158,7 +158,8 @@ TimeStamp VirtualFileSystem::Stat(const string& path, string* err) const {
   return 0;
 }
 
-bool VirtualFileSystem::WriteFile(const string& path, const string& contents) {
+bool VirtualFileSystem::WriteFile(const string& path, const string& contents,
+                                  bool /*crlf_on_windows*/) {
   Create(path, contents);
   return true;
 }
@@ -254,7 +255,7 @@ ScopedFilePath& ScopedFilePath::operator=(ScopedFilePath&& other) noexcept {
 
 ScopedFilePath::~ScopedFilePath() {
   if (!released_) {
-    unlink(path_.c_str());
+    platformAwareUnlink(path_.c_str());
   }
 }
 

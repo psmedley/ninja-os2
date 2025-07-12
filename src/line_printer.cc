@@ -30,6 +30,7 @@
 #ifdef __OS2__
 extern "C" void _scrsize (int *);
 #endif
+#include "elide_middle.h"
 #include "util.h"
 
 using namespace std;
@@ -83,7 +84,7 @@ void LinePrinter::Print(string to_print, LineType type) {
     CONSOLE_SCREEN_BUFFER_INFO csbi;
     GetConsoleScreenBufferInfo(console_, &csbi);
 
-    to_print = ElideMiddle(to_print, static_cast<size_t>(csbi.dwSize.X));
+    ElideMiddleInPlace(to_print, static_cast<size_t>(csbi.dwSize.X));
     if (supports_color_) {  // this means ENABLE_VIRTUAL_TERMINAL_PROCESSING
                             // succeeded
       printf("%s\x1B[K", to_print.c_str());  // Clear to end of line.
@@ -115,7 +116,7 @@ void LinePrinter::Print(string to_print, LineType type) {
 #else
     winsize size;
     if ((ioctl(STDOUT_FILENO, TIOCGWINSZ, &size) == 0) && size.ws_col) {
-      to_print = ElideMiddle(to_print, size.ws_col);
+      ElideMiddleInPlace(to_print, size.ws_col);
     }
 #endif
     printf("%s", to_print.c_str());

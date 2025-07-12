@@ -3,8 +3,10 @@ name: Windows
 on:
   pull_request:
   push:
+    branches: ['**']
+    tags-ignore: ['**']  # Don't trigger on tag pushes
   release:
-    types: published
+    types: [published]
 
 jobs:
   build:
@@ -20,7 +22,7 @@ jobs:
           suffix: 'arm64'
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Install dependencies
       run: choco install re2c
@@ -28,7 +30,7 @@ jobs:
     - name: Build ninja
       shell: bash
       run: |
-        cmake -Bbuild -A ${{ matrix.arch }}
+        cmake -Bbuild -A ${{ matrix.arch }} -DCMAKE_COMPILE_WARNING_AS_ERROR=1
         cmake --build build --parallel --config Debug
         cmake --build build --parallel --config Release
 
@@ -50,9 +52,9 @@ jobs:
 
     # Upload ninja binary archive as an artifact
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: ninja-binary-archives
+        name: ninja-binary-archives${{ matrix.suffix }}
         path: artifact
 
     - name: Upload release asset
