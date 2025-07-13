@@ -33,9 +33,9 @@ struct NodeStoringImplicitDepLoader : public ImplicitDepLoader {
   NodeStoringImplicitDepLoader(
       State* state, DepsLog* deps_log, DiskInterface* disk_interface,
       DepfileParserOptions const* depfile_parser_options,
-      std::vector<Node*>* dep_nodes_output)
+      Explanations* explanations, std::vector<Node*>* dep_nodes_output)
       : ImplicitDepLoader(state, deps_log, disk_interface,
-                          depfile_parser_options),
+                          depfile_parser_options, explanations),
         dep_nodes_output_(dep_nodes_output) {}
 
  protected:
@@ -98,11 +98,13 @@ void MissingDependencyScanner::ProcessNode(Node* node) {
     DepfileParserOptions parser_opts;
     std::vector<Node*> depfile_deps;
     NodeStoringImplicitDepLoader dep_loader(state_, deps_log_, disk_interface_,
-                                            &parser_opts, &depfile_deps);
+                                            &parser_opts, nullptr,
+                                            &depfile_deps);
     std::string err;
     dep_loader.LoadDeps(edge, &err);
     if (!depfile_deps.empty())
-      ProcessNodeDeps(node, &depfile_deps[0], depfile_deps.size());
+      ProcessNodeDeps(node, &depfile_deps[0],
+                      static_cast<int>(depfile_deps.size()));
   }
 }
 
