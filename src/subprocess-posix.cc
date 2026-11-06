@@ -24,6 +24,7 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <spawn.h>
+#include <sys/time.h>
 #ifdef __OS2__
 #include <sys/socket.h>
 #endif
@@ -423,9 +424,40 @@ bool SubprocessSet::DoWork() {
   interrupted_ = 0;
   s_sigchld_received = 0;
 #ifdef __OS2__
-  // TODO we might need to emulate pselect by calling setmask in an atomic manner,
-  // see e.g. https://linux.die.net/man/2/pselect
-  int ret = select(nfds, &set, 0, 0, 0);
+  // kLIBC has no pselect(), so emulate it non-atomically: unblock the signals
+  // that are blocked in the constructor (SIGINT/SIGTERM/SIGHUP/SIGCHLD) for
+  // the duration of select(), then block them again.
+  //
+  // Since ninja 1.12, console subprocesses have no pipe (fd_ == -1) and their
+  // termination is only detected via SIGCHLD + waitpid(WNOHANG). With plain
+  // select() and SIGCHLD blocked, a console job (e.g. a CMake USES_TERMINAL
+  // step such as the nested Chromium build in qtwebengine) is never reaped and
+  // ninja hangs forever once it is the last running job.
+  //
+  // Because unblock+select is not atomic, a signal arriving just before
+  // select() could be missed, so use a short timeout while any console job is
+  // running and poll those jobs with waitpid(WNOHANG) regardless of whether
+  // SIGCHLD was seen.
+  bool have_console = false;
+  for (vector<Subprocess*>::iterator i = running_.begin();
+       i != running_.end(); ++i) {
+    if ((*i)->use_console_) {
+      have_console = true;
+      break;
+    }
+  }
+  struct timeval tv = { 0, 100 * 1000 };  // 100ms
+  sigset_t blocked_mask;
+  if (sigprocmask(SIG_SETMASK, &old_mask_, &blocked_mask) < 0)
+    Fatal("sigprocmask: %s", strerror(errno));
+  int ret = select(nfds, (nfds > 0 ? &set : nullptr), 0, 0,
+                   have_console ? &tv : nullptr);
+  int select_errno = errno;
+  if (sigprocmask(SIG_SETMASK, &blocked_mask, 0) < 0)
+    Fatal("sigprocmask: %s", strerror(errno));
+  errno = select_errno;
+  if (have_console)
+    s_sigchld_received = 1;
 #else
   int ret = pselect(nfds, (nfds > 0 ? &set : nullptr), 0, 0, 0, &old_mask_);
 #endif
