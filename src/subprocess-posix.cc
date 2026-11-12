@@ -26,6 +26,8 @@
 #include <spawn.h>
 #include <sys/time.h>
 #ifdef __OS2__
+#include <signal.h>
+#include <stdlib.h>  // _beginthread
 #include <sys/socket.h>
 #endif
 
@@ -49,6 +51,56 @@ using namespace std;
 
 namespace {
   ExitStatus ParseExitStatus(int status);
+
+#ifdef __OS2__
+// Copies a job's output from the pipe it writes to into the socket ninja
+// select()s on (see Subprocess::Start()), then closes both ends, so that ninja
+// sees EOF on the socket once the job (and anything that inherited its stdout)
+// is done.
+void OutputPumpThread(void* arg) {
+  int* fds = static_cast<int*>(arg);
+  int in = fds[0];
+  int out = fds[1];
+  delete[] fds;
+
+  // Don't let a write after ninja stopped reading (e.g. after Ctrl-C) kill
+  // ninja with SIGPIPE; ninja's other signals stay blocked in this thread.
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGPIPE);
+  sigaddset(&set, SIGINT);
+  sigaddset(&set, SIGTERM);
+  sigaddset(&set, SIGHUP);
+  sigaddset(&set, SIGCHLD);
+  sigprocmask(SIG_BLOCK, &set, NULL);
+
+  char buf[4 << 10];
+  bool discard = false;
+  for (;;) {
+    ssize_t len = read(in, buf, sizeof(buf));
+    if (len < 0 && errno == EINTR)
+      continue;
+    if (len <= 0)
+      break;
+    const char* p = buf;
+    while (len > 0 && !discard) {
+      ssize_t written = write(out, p, len);
+      if (written < 0) {
+        if (errno == EINTR)
+          continue;
+        // ninja stopped reading (e.g. it is shutting down). Keep draining the
+        // pipe so the job doesn't block on a full pipe, but drop the output.
+        discard = true;
+        break;
+      }
+      p += written;
+      len -= written;
+    }
+  }
+  close(in);
+  close(out);
+}
+#endif
 }
 
 Subprocess::Subprocess(bool use_console) : fd_(-1), pid_(-1),
@@ -65,22 +117,42 @@ Subprocess::~Subprocess() {
 
 bool Subprocess::Start(SubprocessSet* set, const string& command) {
   int subproc_stdout_fd = -1;
+#ifdef __OS2__
+  int* pump_fds = NULL;
+#endif
   if (use_console_) {
     fd_ = -1;
   } else {
     int output_pipe[2];
 #ifdef __OS2__
-    // Note that using socketpair instead of pipe breaks grabbing output from
-    // non-kLIBC processes but we need https://github.com/bitwiseworks/libcx/issues/34
-    // to make select work with native pipes.
+    // select() only works with sockets on OS/2 (LIBCx doesn't support native
+    // pipes yet, https://github.com/bitwiseworks/libcx/issues/34), so ninja
+    // waits on a socketpair. However, the job must not get the socket as its
+    // stdout/stderr: LIBCx's spawn2() (used e.g. by Python's subprocess) then
+    // dup()s a socket for every process the job starts, which intermittently
+    // fails with EBUSY, and non-kLIBC programs can't write to it at all.
+    // Instead give the job a real pipe and let a thread pump the pipe into
+    // the socketpair.
+    int job_pipe[2];
+    if (pipe(job_pipe) < 0)
+      Fatal("pipe: %s", strerror(errno));
     if (socketpair(AF_LOCAL, SOCK_STREAM, 0, output_pipe) < 0)
       Fatal("socketpair: %s", strerror(errno));
+    // Neither end the pump thread keeps may leak into other jobs, or ninja
+    // would not see EOF until those jobs exit too.
+    SetCloseOnExec(job_pipe[0]);
+    SetCloseOnExec(output_pipe[1]);
+    fd_ = output_pipe[0];
+    subproc_stdout_fd = job_pipe[1];
+    pump_fds = new int[2];
+    pump_fds[0] = job_pipe[0];
+    pump_fds[1] = output_pipe[1];
 #else
     if (pipe(output_pipe) < 0)
       Fatal("pipe: %s", strerror(errno));
-#endif
     fd_ = output_pipe[0];
     subproc_stdout_fd = output_pipe[1];
+#endif
 #if !defined(USE_PPOLL)
     // If available, we use ppoll in DoWork(); otherwise we use pselect
     // and so must avoid overly-large FDs.
@@ -162,6 +234,18 @@ bool Subprocess::Start(SubprocessSet* set, const string& command) {
 
   if (!use_console_)
     close(subproc_stdout_fd);
+#ifdef __OS2__
+  if (pump_fds) {
+    int pump_read = pump_fds[0];
+    int pump_write = pump_fds[1];
+    if (_beginthread(OutputPumpThread, NULL, 64 << 10, pump_fds) == -1) {
+      delete[] pump_fds;
+      close(pump_read);
+      close(pump_write);
+      Fatal("_beginthread: %s", strerror(errno));
+    }
+  }
+#endif
   return true;
 }
 
